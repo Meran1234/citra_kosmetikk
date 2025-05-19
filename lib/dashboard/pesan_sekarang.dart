@@ -4,6 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:intl/intl.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:midtrans_sdk/midtrans_sdk.dart';
+import 'package:midtrans_sdk/midtrans_sdk_config.dart';
 
 class PesanSekarang extends StatefulWidget {
   final List<Map<String, dynamic>> selectedProducts;
@@ -18,13 +20,38 @@ class _PesanSekarangState extends State<PesanSekarang> {
   String id = 'id_user';
   String nama = 'Nama';
   String noTelp = 'No. Telepon';
+  String email = 'Email';
+  late MidtransSDK _midtrans;
   List<dynamic> alamatList = [];
 
   @override
   void initState() {
     super.initState();
+    _initMidtrans();
     _loadUserId();
     _loadNama();
+  }
+
+  void _initMidtrans() {
+    _midtrans = MidtransSDK(
+      config: MidtransSDKConfig(
+        clientKey: 'SB-Mid-client-6NQoukLlipWjPKHi',
+        merchantBaseUrl: 'https://citrakosmetik.my.id/create_payment.php',
+        enableLog: true,
+        environment: MidtransEnvironment.sandbox,
+      ),
+    );
+    _midtrans.setTransactionFinishedCallback((result) {
+      print('Transaction finished: ${result.toJson()}');
+    });
+  }
+
+  void _startPayment(String snapToken) async {
+    try {
+      await _midtrans.startPaymentUiFlow(token: snapToken);
+    } catch (e) {
+      print("Error launching payment: $e");
+    }
   }
 
   Future<void> _loadUserId() async {
@@ -55,8 +82,7 @@ class _PesanSekarangState extends State<PesanSekarang> {
         if (response.statusCode == 200 && response.data['success'] == true) {
           setState(() {
             nama = response.data['pembeli'][0]['nama'] ?? 'Tidak diketahui';
-            noTelp =
-                response.data['pembeli'][0]['no_telp'] ??
+            noTelp = response.data['pembeli'][0]['no_telp'] ??
                 'No. Telepon tidak tersedia';
           });
         } else {
@@ -200,23 +226,21 @@ class _PesanSekarangState extends State<PesanSekarang> {
                 children: [
                   widget.selectedProducts.isEmpty
                       ? const Center(
-                        child: Text('Tidak ada produk yang dipilih'),
-                      )
+                          child: Text('Tidak ada produk yang dipilih'),
+                        )
                       : ListView.builder(
-                        shrinkWrap: true,
-                        physics: const NeverScrollableScrollPhysics(),
-                        itemCount: widget.selectedProducts.length,
-                        itemBuilder: (context, index) {
-                          final item = widget.selectedProducts[index];
-                          final imageUrl =
-                              item['gambar'].isNotEmpty
-                                  ? item['gambar'][0]
-                                  : '';
-                          return ListTile(
-                            contentPadding: EdgeInsets.zero,
-                            leading:
-                                imageUrl.isNotEmpty
-                                    ? Container(
+                          shrinkWrap: true,
+                          physics: const NeverScrollableScrollPhysics(),
+                          itemCount: widget.selectedProducts.length,
+                          itemBuilder: (context, index) {
+                            final item = widget.selectedProducts[index];
+                            final imageUrl = item['gambar'].isNotEmpty
+                                ? item['gambar'][0]
+                                : '';
+                            return ListTile(
+                              contentPadding: EdgeInsets.zero,
+                              leading: imageUrl.isNotEmpty
+                                  ? Container(
                                       width: 60, // Ukuran gambar
                                       height: 150, // Ukuran gambar
                                       decoration: BoxDecoration(
@@ -227,47 +251,47 @@ class _PesanSekarangState extends State<PesanSekarang> {
                                         ),
                                       ),
                                     )
-                                    : const Icon(
+                                  : const Icon(
                                       Icons.image,
                                       color: Colors.white,
                                     ),
-                            title: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  item['merek'],
-                                  style: const TextStyle(
-                                    fontWeight: FontWeight.bold,
-                                    color: Colors.white,
-                                    fontSize: 16,
+                              title: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    item['merek'],
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      color: Colors.white,
+                                      fontSize: 16,
+                                    ),
                                   ),
-                                ),
-                                const SizedBox(height: 4),
-                                Row(
-                                  mainAxisAlignment:
-                                      MainAxisAlignment.spaceBetween,
-                                  children: [
-                                    Text(
-                                      'Rp. ${NumberFormat('#,###', 'id_ID').format(item['harga'])}',
-                                      style: const TextStyle(
-                                        color: Colors.white,
-                                        fontSize: 14,
+                                  const SizedBox(height: 4),
+                                  Row(
+                                    mainAxisAlignment:
+                                        MainAxisAlignment.spaceBetween,
+                                    children: [
+                                      Text(
+                                        'Rp. ${NumberFormat('#,###', 'id_ID').format(item['harga'])}',
+                                        style: const TextStyle(
+                                          color: Colors.white,
+                                          fontSize: 14,
+                                        ),
                                       ),
-                                    ),
-                                    Text(
-                                      "x ${item['quantity']}",
-                                      style: const TextStyle(
-                                        color: Colors.white,
-                                        fontSize: 14,
+                                      Text(
+                                        "x ${item['quantity']}",
+                                        style: const TextStyle(
+                                          color: Colors.white,
+                                          fontSize: 14,
+                                        ),
                                       ),
-                                    ),
-                                  ],
-                                ),
-                              ],
-                            ),
-                          );
-                        },
-                      ),
+                                    ],
+                                  ),
+                                ],
+                              ),
+                            );
+                          },
+                        ),
                   const SizedBox(height: 12),
 
                   // Pengiriman
@@ -351,26 +375,102 @@ class _PesanSekarangState extends State<PesanSekarang> {
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 ElevatedButton(
-                  onPressed: () {
-                    // Tambahkan aksi di sini
+                  onPressed: () async {
+                    try {
+                      final idUser = id;
+                      final namaPembeli = nama;
+                      final noTelpPembeli = noTelp;
+                      final emailPembeli = email; // Jika ada, ambil dari DB
+                      final alamatPembeli = alamatList.isNotEmpty
+                          ? alamatList[0]['alamat'] ?? ''
+                          : '';
+
+                      final produk = widget.selectedProducts
+                          .map((item) => {
+                                'id_produk':
+                                    item['id_produk'] ?? item['id'] ?? '',
+                                'jumlah': item['quantity'],
+                              })
+                          .toList();
+
+                      final totalPembayaran =
+                          widget.selectedProducts.fold<double>(
+                        0,
+                        (total, item) =>
+                            total +
+                            (double.tryParse(item['harga'].toString()) ?? 0.0) *
+                                (item['quantity'] ?? 1),
+                      );
+
+                      final body = {
+                        'id_user': idUser,
+                        'total': totalPembayaran,
+                        'nama': namaPembeli,
+                        'email': emailPembeli,
+                        'no_telp': noTelpPembeli,
+                        'alamat': alamatPembeli,
+                        'produk': produk,
+                      };
+
+                      final response = await http.post(
+                        Uri.parse(
+                            'https://citrakosmetik.my.id/create_payment.php'),
+                        headers: {'Content-Type': 'application/json'},
+                        body: jsonEncode(body),
+                      );
+
+                      if (response.statusCode == 200) {
+                        final data = jsonDecode(response.body);
+                        if (data['status'] == 'success') {
+                          final snapToken = data['snap_token'];
+                          if (snapToken != null && snapToken.isNotEmpty) {
+                            _startPayment(snapToken);
+                          } else {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                  content:
+                                      Text("Gagal mendapatkan Snap Token")),
+                            );
+                          }
+                        } else {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                                content:
+                                    Text(data['message'] ?? 'Error transaksi')),
+                          );
+                        }
+                      } else {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                              content:
+                                  Text("Server error: ${response.statusCode}")),
+                        );
+                      }
+                    } catch (e) {
+                      print("Error: $e");
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                            content: Text(
+                                "Terjadi kesalahan saat proses pembayaran")),
+                      );
+                    }
                   },
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.white,
                     padding: const EdgeInsets.symmetric(
-                      vertical: 15,
-                      horizontal: 100,
-                    ),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(20),
-                    ),
+                        vertical: 15, horizontal: 40),
                   ),
                   child: const Text(
-                    "Pesan Sekarang",
-                    style: TextStyle(color: Colors.black, fontSize: 16),
+                    "Bayar Sekarang",
+                    style: TextStyle(
+                      color: Colors.blue,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 16,
+                    ),
                   ),
                 ),
               ],
-            ),
+            )
           ],
         ),
       ),
